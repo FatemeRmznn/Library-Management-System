@@ -1,274 +1,294 @@
 import tkinter as tk
 import pyodbc
 from tkinter import ttk
+from PIL import Image, ImageTk
+from tkinter import messagebox
 
 # Connect to my SQL Server database
 conn = pyodbc.connect(
     'DRIVER={SQL Server};'
     'SERVER=LAPTOP-D5JS7NNP;'
-    'DATABASE=Final_project;'
+    'DATABASE=Library_Management;'
     'Trusted_Connection=yes;')
 
 # Create a cursor object
 cursor = conn.cursor()
 
 
-def open_Reader_dashboard(reader_id):
-    def search_book():
-        # Create a new window for book search
-        search_window = tk.Toplevel()
-        search_window.title("Search Book")
-        # Load the image
-        image = tk.PhotoImage(file="main.png")
+# --- Helper Functions ---
+def center_window(window, width, height):
+    screen_width = window.winfo_screenwidth()
+    screen_height = window.winfo_screenheight()
+    x = (screen_width / 2) - (width / 2)
+    y = (screen_height / 2) - (height / 2)
+    window.geometry(f"{width}x{height}+{int(x)}+{int(y)}")
 
-        # Get the width and height of the image
-        image_width = image.width()
-        image_height = image.height()
 
-        # Set the maximum width for resizing
-        max_width = 710
+def load_background(window, image_path, width, height):
+    try:
+        image = Image.open(image_path)
+        resized_image = image.resize((width, height), Image.LANCZOS)
+        bg_image = ImageTk.PhotoImage(resized_image)
 
-        # Calculate the appropriate window height to maintain image aspect ratio within the maximum width
-        window_height = int(image_height * max_width / image_width)
+        # نگه‌داشتن مرجع به تصویر
+        window.bg_image = bg_image
 
-        # Set the minimum and maximum window sizes
-        search_window.minsize(400, 400)  # Replace with your desired minimum size
-        search_window.maxsize(max_width, window_height)
-
-        # Create a label with the image as the background
-        background_label = tk.Label(search_window, image=image)
+        background_label = tk.Label(window, image=bg_image)
+        background_label.image = bg_image  # Keep a reference!
         background_label.place(x=0, y=0, relwidth=1, relheight=1)
+        return background_label  # return label
+    except FileNotFoundError:
+        messagebox.showerror("Error", f"Image file '{image_path}' not found.")
+        return None
 
-        # Create labels and entry fields for book title and ID
-        label_title = tk.Label(search_window, text="Book Title:")
-        entry_title = tk.Entry(search_window)
-        label_title.pack()
-        entry_title.pack()
 
-        label_id = tk.Label(search_window, text="Book ID:")
-        entry_id = tk.Entry(search_window)
-        label_id.pack()
-        entry_id.pack()
+def apply_font(widget, font_style):
+    widget.config(font=font_style)
+
+
+def create_label(window, text, font_style, bg="white", **kwargs):
+    label = tk.Label(window, text=text, font=font_style, bg=bg, **kwargs)
+    return label
+
+
+def create_entry(window, font_style, **kwargs):
+    entry = tk.Entry(window, font=font_style, **kwargs)
+    return entry
+
+
+def create_button(window, text, command, font_style, **kwargs):
+    button = tk.Button(window, text=text, command=command, font=font_style, **kwargs)
+    return button
+
+
+def create_treeview(window, columns, heading_texts, column_widths, font_style):
+    style = ttk.Style()
+    style.configure("Treeview", font=font_style)  # تنظیم فونت برای Treeview
+    style.configure("Treeview.Heading", font=("Arial", 12, "bold"))  # تنظیم فونت هدر
+
+    tree = ttk.Treeview(window, columns=columns, show="headings", style="Treeview")
+    for col, heading_text, width in zip(columns, heading_texts, column_widths):
+        tree.heading(col, text=heading_text)
+        tree.column(col, width=width)
+
+    return tree
+
+
+# --- End Helper Functions ---
+
+
+def open_reader_dashboard(reader_id):
+    DASHBOARD_WIDTH = 900
+    DASHBOARD_HEIGHT = 600
+    FONT_STYLE = ("Arial", 12)
+
+    dashboard = tk.Toplevel()
+    dashboard.title("Reader Dashboard")
+    center_window(dashboard, DASHBOARD_WIDTH, DASHBOARD_HEIGHT)
+
+    # Load Background Image
+    background_label = load_background(dashboard, "library.jpg", DASHBOARD_WIDTH, DASHBOARD_HEIGHT)
+    if not background_label:
+        return
+
+    # ایجاد Frame مخفی برای نمایش محتوا
+    search_frame = tk.Frame(dashboard, bg="white")
+    search_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    search_frame.pack_forget()  # در ابتدا مخفی باشد
+
+    def show_frame():
+        """ این تابع باعث می‌شود که Frame دیده شود. """
+        search_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    def search_book():
+        search_frame.pack_forget()
+        for widget in search_frame.winfo_children():
+            widget.destroy()
+
+        show_frame()
+
+        label_title = create_label(search_frame, "Book Title:", FONT_STYLE, bg="white")
+        label_title.pack(pady=(20, 5))
+        entry_title = create_entry(search_frame, FONT_STYLE)
+        entry_title.pack(pady=(0, 10))
+
+        label_id = create_label(search_frame, "Book ID:", FONT_STYLE, bg="white")
+        label_id.pack(pady=(5, 5))
+        entry_id = create_entry(search_frame, FONT_STYLE)
+        entry_id.pack(pady=(0, 10))
 
         def perform_search():
-            # Retrieve the input values from the entry fields
-            title = entry_title.get()
-            book_id = entry_id.get()
+            book_id = entry_id.get().strip()
+            title = entry_title.get().strip()
 
-            # Query the database based on the input values
-            cursor.execute("SELECT * FROM book WHERE book_id = ? OR title = ?",
-                           (book_id, title))
-            rows = cursor.fetchall()
+            # بررسی اینکه حداقل یک مقدار وارد شده باشد
+            if not book_id and not title:
+                messagebox.showwarning("Warning", "Please enter either Book ID or Title.")
+                return
 
-            # Clear the existing table data
-            for record in search_table.get_children():
-                search_table.delete(record)
+            try:
+                query = "SELECT * FROM Books WHERE 1=1"
+                params = []
 
-            # Insert the fetched rows into the table
-            for row in rows:
-                ID_BOOK = row[0]
-                Title = row[1]
-                WriterName = row[2]
-                PublisherID = row[3]
-                PublisherYear = row[4]
-                Number = row[5]
-                Category = row[6]
-                Detail = row[7]
+                if book_id:
+                    query += " AND book_id = ?"
+                    params.append(book_id)
 
-                search_table.insert("", "end", values=(
-                    ID_BOOK, Title, WriterName, PublisherID, PublisherYear, Number, Category, Detail))
+                if title:
+                    query += " AND title LIKE ?"
+                    params.append(f"%{title}%")
 
-        # Create a search button
-        button_search = tk.Button(search_window, text="Search", command=perform_search)
-        button_search.pack()
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
 
-        # Create a treeview to display the records
-        search_table = ttk.Treeview(search_window, columns=(
-            "book_id", "title", "author", "publisher_id", "publication_year", "available", "category", "detail"))
-        search_table.heading("book_id", text="book_id")
-        search_table.heading("title", text="title")
-        search_table.heading("author", text="author")
-        search_table.heading("publisher_id", text="publisher_id")
-        search_table.heading("publication_year", text="publication_year")
-        search_table.heading("available", text="available")
-        search_table.heading("category", text="category")
-        search_table.heading("detail", text="detail")
-        search_table.column("book_id", width=80)  # Set width for book_id column
-        search_table.column("title", width=80)  # Set width for Title column
-        search_table.column("author", width=100)  # Set width for Author column
-        search_table.column("publisher_id", width=100)  # Set width for PublisherID column
-        search_table.column("publication_year", width=100)  # Set width for PublishYear column
-        search_table.column("available", width=80)  # Set width for Number column
-        search_table.column("category", width=80)  # Set width for Category column
-        search_table.column("detail", width=80)  # Set width for Detail column
-        search_table.column("#0", width=0)  # Hide the first column
-        search_table.place(x=0, y=0, relwidth=1, relheight=1)
-        search_table.pack()
+                # حذف داده‌های قبلی `Treeview`
+                for record in search_table.get_children():
+                    search_table.delete(record)
 
-        search_window.mainloop()
+                if not rows:
+                    messagebox.showinfo("Search Result", "No books found.")
+                    return
+
+                for row in rows:
+                    search_table.insert("", "end", values=(
+                        row.book_id,
+                        row.title,
+                        row.author,
+                        row.publisher_id,
+                        row.publication_year,
+                        "Yes" if row.available else "No",
+                        row.category if row.category else "",
+                        row.details if row.details else ""
+                    ))
+
+            except pyodbc.Error as e:
+                messagebox.showerror("Database Error", f"Error searching for books: {e}")
+
+        button_search = create_button(search_frame, "Search", perform_search, FONT_STYLE)
+        button_search.pack(pady=20)
+
+        search_table = create_treeview(
+            search_frame,
+            columns=(
+            "book_id", "title", "author", "publisher_id", "publication_year", "available", "category", "details"),
+            heading_texts=(
+            "Book ID", "Title", "Author", "Publisher ID", "Publication Year", "Available", "Category", "Details"),
+            column_widths=(80, 120, 100, 100, 100, 80, 120, 150),
+            font_style=FONT_STYLE
+        )
+        search_table.column("#0", width=0, stretch=tk.NO)
+        search_table.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+
+
 
     def open_books():
-        # Execute the SQL query
-        cursor.execute("SELECT * FROM Book")
+        search_frame.pack_forget()
+        for widget in search_frame.winfo_children():
+            widget.destroy()
 
-        # Fetch all the rows from the query result
-        rows = cursor.fetchall()
+        show_frame()
 
-        # Clear the existing table data
-        for record in book_table.get_children():
-            book_table.delete(record)
+        label_books = create_label(search_frame, "Available Books:", FONT_STYLE, bg="white")
+        label_books.pack(pady=(10, 5))
 
-        # Insert the fetched rows into the table
-        for row in rows:
-            book_id = row.ID_BOOK
-            title = row.Title
-            author = row.WriterName
-            PublisherID = row.PublisherID
-            PublishYear = row.PublishYear
-            Number = row.Number
-            Category = row.Category
-            Detail = row.Detail
+        book_table = create_treeview(
+            search_frame,
+            columns=(
+            "book_id", "title", "author", "publisher_id", "publication_year", "available", "category", "details"),
+            heading_texts=(
+            "Book ID", "Title", "Author", "Publisher ID", "Publication Year", "Available", "Category", "Details"),
+            column_widths=(80, 120, 100, 100, 100, 80, 120, 150),
+            font_style=FONT_STYLE
+        )
+        book_table.column("#0", width=0, stretch=tk.NO)
+        book_table.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
 
-            # Insert the data into the table
-            book_table.insert("", "end",
-                              values=(book_id, title, author, PublisherID, PublishYear, Number, Category, Detail))
+        try:
+            cursor.execute("SELECT * FROM Books")
+            rows = cursor.fetchall()
 
-        # Show the table
-        book_table.pack()
+            # پاک کردن داده‌های قبلی از `Treeview`
+            for record in book_table.get_children():
+                book_table.delete(record)
 
-    def open_LendingDesk():
-        # Create a new window for the Lending Desk
-        lending_window = tk.Toplevel()
-        lending_window.title("Lending Desk")
+            for row in rows:
+                # جایگزینی مقدار `None` با مقدار خالی برای جلوگیری از خطای `NoneType`
+                book_table.insert("", "end", values=(
+                    row.book_id,
+                    row.title,
+                    row.author,
+                    row.publisher_id,
+                    row.publication_year,
+                    "Yes" if row.available else "No",
+                    row.category if row.category else "",
+                    row.details if row.details else ""
+                ))
 
-        # Load the image
-        image = tk.PhotoImage(file="main.png")
+        except pyodbc.Error as e:
+            messagebox.showerror("Database Error", f"Error fetching book data: {e}")
 
-        # Get the width and height of the image
-        image_width = image.width()
-        image_height = image.height()
+    def open_lending_desk():
+        search_frame.pack_forget()
+        for widget in search_frame.winfo_children():
+            widget.destroy()
 
-        # Set the maximum width for resizing
-        max_width = 600
+        show_frame()
 
-        # Calculate the appropriate window height to maintain image aspect ratio within the maximum width
-        window_height = int(image_height * max_width / image_width)
+        label_history = create_label(search_frame, "Lending History:", FONT_STYLE, bg="white")
+        label_history.pack(pady=(10, 5))
 
-        # Set the minimum and maximum window sizes
-        lending_window.minsize(400, 400)  # Replace with your desired minimum size
-        lending_window.maxsize(max_width, window_height)
+        columns = ("book_id", "title", "borrow_date", "return_date", "remarks", "reader_name", "status")
+        lending_table = create_treeview(
+            search_frame,
+            columns=columns,
+            heading_texts=("Book ID", "Title", "Borrow Date", "Return Date", "Remarks", "Reader", "Status"),
+            column_widths=(80, 150, 120, 120, 120, 150, 100),
+            font_style=FONT_STYLE
+        )
+        lending_table.column("#0", width=0, stretch=tk.NO)
+        lending_table.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
 
-        # Create a label with the image as the background
-        background_label = tk.Label(lending_window, image=image)
-        background_label.place(x=0, y=0, relwidth=1, relheight=1)
+        try:
+            query = """
+                SELECT 
+                    L.book_id, 
+                    B.title, 
+                    CONVERT(VARCHAR, L.borrow_date, 120) AS borrow_date,
+                    COALESCE(CONVERT(VARCHAR, L.return_date, 120), 'Not Returned') AS return_date,
+                    COALESCE(L.remarks, '') AS remarks,
+                    R.first_name + ' ' + R.last_name AS reader_name,
+                    CASE 
+                        WHEN L.return_date IS NULL THEN 'Borrowed'
+                        ELSE 'Returned'
+                    END AS status
+                FROM LendingDesk L
+                LEFT JOIN Books B ON L.book_id = B.book_id
+                LEFT JOIN Readers R ON L.reader_id = R.reader_id
+                WHERE L.reader_id = ?
+            """
 
-        # Define the columns for the Lending Desk table
-        columns = ("book_id", "title", "borrow_description", "borrow_date", "return_date")
+            cursor.execute(query, (reader_id,))
+            rows = cursor.fetchall()
 
-        # Create the Lending Desk table
-        lending_table = ttk.Treeview(lending_window, columns=columns, show="headings")
+            # پاک کردن داده‌های قبلی از Treeview
+            for record in lending_table.get_children():
+                lending_table.delete(record)
 
-        # Configure the column headings
-        for col in columns:
-            lending_table.heading(col, text=col)
-            lending_table.column(col, width=100)  # Set the column width as desired
+            # درج داده‌ها در Treeview
+            for row in rows:
+                lending_table.insert("", "end", values=row)
 
-        sql_statement = f"""
-            CREATE VIEW Reader_history AS
-            SELECT L.book_id, B.title, L.borrow_description, L.borrow_date, L.return_date
-            FROM LendingDesks L
-            JOIN book B ON L.book_id = B.book_id
-            WHERE L.reader_id = {reader_id}
-        """
-        cursor.execute(sql_statement)
-        # Fetch the data from the Reader_history view
-        cursor.execute("SELECT * FROM Reader_history")
-        rows = cursor.fetchall()
+        except pyodbc.Error as e:
+            messagebox.showerror("Database Error", f"Error fetching lending history: {e}")
 
-        # Insert the data into the Lending Desk table
-        for row in rows:
-            lending_table.insert("", "end", values=row)
+    # دکمه‌ها
+    button_search_book = create_button(dashboard, "Search Book", search_book, FONT_STYLE)
+    button_books = create_button(dashboard, "See Books", open_books, FONT_STYLE)
+    button_lending_desk = create_button(dashboard, "Lending Desk", open_lending_desk, FONT_STYLE)
 
-        # Pack the Lending Desk table
-        lending_table.pack()
-        lending_table.mainloop()
+    button_search_book.pack(pady=10)
+    button_books.pack(pady=10)
+    button_lending_desk.pack(pady=10)
 
-    dashboard = tk.Tk()
-    dashboard.title("Reader dashboard")
-    dashboard.geometry("700x500")
-
-    button_search_book = tk.Button(dashboard, text="Search book", command=search_book)
-    button_books = tk.Button(dashboard, text="See Books", command=open_books)
-    button_LendingDesk = tk.Button(dashboard, text="Lending Desk", command=open_LendingDesk)
-
-    # Place the buttons in the dashboard window
-    button_search_book.pack()
-    button_books.pack()
-    button_LendingDesk.pack()
-
-    # Create the table to display books (Initially hidden)
-    book_table = ttk.Treeview(dashboard, columns=("book_id", "title", "Author", "PublisherID", "PublishYear", "Number",
-                                                  "Category", "Detail"))
-    book_table.heading("book_id", text="Book ID")
-    book_table.heading("title", text="title")
-    book_table.heading("Author", text="Author")
-    book_table.heading("PublisherID", text="Publisher ID")
-    book_table.heading("PublishYear", text="Publish Year")
-    book_table.heading("Number", text="Number")
-    book_table.heading("Category", text="Category")
-    book_table.heading("Detail", text="Detail")
-    book_table.column("book_id", width=80)  # Set width for book_id column
-    book_table.column("title", width=80)  # Set width for Title column
-    book_table.column("Author", width=80)  # Set width for Author column
-    book_table.column("PublisherID", width=100)  # Set width for PublisherID column
-    book_table.column("PublishYear", width=80)  # Set width for PublishYear column
-    book_table.column("Number", width=80)  # Set width for Number column
-    book_table.column("Category", width=80)  # Set width for Category column
-    book_table.column("Detail", width=100)  # Set width for Detail column
-    book_table.column("#0", width=0)  # Hide the first column
-
-    # Create the table to display reports (Initially hidden)
-    LendingDesk = ttk.Treeview(dashboard, columns=(
-        "title", "Description", "Data Of Borrow", "Return Date"))
-    LendingDesk.heading("title", text="title")
-    LendingDesk.heading("Description", text="Description")
-    LendingDesk.heading("Data Of Borrow", text="Data Of Borrow")
-    LendingDesk.heading("Return Date", text="Return Date")
-    dashboard.mainloop()
-
-
-
-# if u need try reader dashboard u can use this part to run directly:
-
-""""
-dashboard = tk.Tk()
-dashboard.title("Reader Dashboard")
-
-# Load the image
-image = tk.PhotoImage(file="main.png")
-
-# Get the width and height of the image
-image_width = image.width()
-image_height = image.height()
-
-# Set the maximum width for resizing
-max_width = 700
-
-# Calculate the appropriate window height to maintain image aspect ratio within the maximum width
-window_height = int(image_height * max_width / image_width)
-
-# Set the minimum and maximum window sizes
-dashboard.minsize(400, 400)  # Replace with your desired minimum size
-dashboard.maxsize(max_width, window_height)
-
-# Create a label with the image as the background
-background_label = tk.Label(dashboard, image=image)
-background_label.place(x=0, y=0, relwidth=1, relheight=1)
-
-# Create a button to open the Reader dashboard
-button_reader_dashboard = tk.Button(dashboard, text="Reader Dashboard", command=open_Reader_dashboard)
-button_reader_dashboard.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
-
-# Run the main event loop
-dashboard.mainloop()
-"""
+if __name__ == '__main__':
+    open_reader_dashboard(123)
